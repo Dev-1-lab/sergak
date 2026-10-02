@@ -4,7 +4,9 @@
 
 The interface is in Uzbek (Latin). The detection engine also understands Uzbek Cyrillic and Russian.
 
-> 🔒 **Privacy by design:** the app has **no INTERNET permission at all** (it's stripped in the manifest). Every check runs on the device, and message text is never stored or sent anywhere.
+> 🔒 **Privacy by design:** message text is never stored or sent anywhere. Two builds:
+> - **offline** (`uz.sergak.offline`): **no INTERNET permission at all**, for government and air-gapped use. Everything runs on the device.
+> - **online** (`uz.sergak`): adds opt-in cloud checks through *your* Sergak server. Only APK **SHA-256 hashes** and links the user chooses to check are sent. API keys live on the server, never in the APK.
 
 ## Features
 
@@ -18,6 +20,65 @@ The interface is in Uzbek (Latin). The detection engine also understands Uzbek C
 | **Himoya** (Protect) | A step-by-step hardening plan for the phone, Telegram (2FA, sessions, privacy, auto-download, cards in Saved Messages, @cybershielduz_bot) and payment apps (Click / Payme / bank apps). Steps are checked automatically where possible |
 | **O'rganish** (Learn) | 9 lessons on real local schemes plus an 8-question scenario quiz |
 | **SOS** | An "I've been scammed or hacked" playbook with call buttons for 102, the IIV hotline, the Cybersecurity Center (24/7) and the Central Bank hotline |
+
+## Real-threat detection
+
+| Layer | Where | What it catches |
+|---|---|---|
+| **APK static analysis** | on device | Second APK or DEX hidden in `assets/` (droppers), high-entropy encrypted payloads (`.dat` / `.key`, the MidnightDat and RoundRift patterns), the known `libandroidcore_native.so` dropper library |
+| **Fake-app detection** | on device | A sideloaded app named "Click", "Payme", "Telegram", "Google Play", "Update", or disguised as a file ("Sud qarori.pdf", "To'ydan video") |
+| **IOC hashes** | on device + server feed | Known Uzbek SMS-stealer samples (Group-IB 2025, bundled), plus a daily feed from your server (`/v1/feed`) |
+| **VirusTotal** (70+ AV engines) | server | Hash lookup for sideloaded apps and APK files *before install*, plus URL lookup |
+| **MalwareBazaar** (abuse.ch) | server | Confirmed malware hashes (Ajina, Wonderland…) |
+| **URLhaus** (abuse.ch) | server | Malware-distribution URLs |
+| **Google Web Risk / Safe Browsing** | server | Phishing and malware sites |
+
+**Check an APK before installing it:** in Telegram, use *Share* or *Open with → Sergak*, or the "APK faylni tekshirish" button. The file is copied to the app's cache, analysed and deleted.
+
+## Backend (`server/`): deploy, then add keys
+
+Spring Boot 3.5 / Java 21 / PostgreSQL. Every provider is **off until its key is set**, so you can deploy now and add keys later.
+
+```bash
+cd server
+cp .env.example .env        # fill in keys (see below)
+docker compose up -d        # API on :8080, Postgres in a volume
+curl localhost:8080/v1/info # shows which providers are enabled
+```
+
+Or use the image CI publishes: `ghcr.io/dev-1-lab/sergak-api:latest` (make the package public under GitHub → Packages, or `docker login ghcr.io`).
+
+| Env var | Where to get it | Notes |
+|---|---|---|
+| `VT_API_KEY` | virustotal.com → API key | **The public key is not allowed in commercial products** (4 req/min, 500/day). Get Premium for a public launch and raise `VT_RPM` / `VT_RPD` |
+| `ABUSECH_AUTH_KEY` | auth.abuse.ch (free) | One key covers MalwareBazaar and URLhaus |
+| `GOOGLE_API_KEY` + `GOOGLE_MODE` | Google Cloud console | `web-risk` (commercial use allowed) or `safe-browsing` (non-commercial only) |
+| `SERGAK_APP_TOKEN` | `openssl rand -hex 24` | Must match the app build. It isn't a real secret (it can be pulled out of the APK); it only filters casual bots. Plan Play Integrity for production |
+| `SERGAK_ADMIN_TOKEN` | `openssl rand -hex 32` | Enables `/admin/ioc` |
+| `DB_PASSWORD` | – | Postgres password |
+
+Put it behind HTTPS (nginx or Caddy). It reads `X-Forwarded-For` for rate limiting.
+
+**Point the app at your server:** in GitHub, go to *Settings → Secrets and variables → Actions*. Set the variable `SERGAK_API_URL=https://api.your-domain.uz` and the secret `SERGAK_APP_TOKEN`, then re-run the workflow. Locally:
+`./gradlew assembleOnlineRelease -PsergakApiUrl=https://… -PsergakAppToken=…`
+
+### API
+
+| Method | Path | Body / notes |
+|---|---|---|
+| `POST` | `/v1/hashes` | `{"sha256":["…"]}`, up to 50 → `{"results":[{key,status,detections,engines,label,sources,cached,partial}]}` |
+| `POST` | `/v1/url` | `{"url":"…"}`. `?query` and `#fragment` are stripped before lookup (`SERGAK_STRIP_URL_QUERY`) |
+| `GET` | `/v1/feed` | IOC hashes and phishing domains, with ETag |
+| `GET` | `/v1/info` | Enabled providers |
+| `POST` | `/admin/ioc` | `X-Admin-Token`; `{"type":"SHA256|SHA1|DOMAIN","value":"…","label":"…","source":"…"}` |
+
+`status` is one of `MALICIOUS`, `SUSPICIOUS`, `CLEAN` or `UNKNOWN`.
+
+How the server keeps lookups private and within quota:
+- **Unknown URLs are never submitted to VirusTotal.** Submissions become public there and could leak private tokens.
+- **Files are never uploaded.** Only hashes are sent.
+- **Results are cached in Postgres** (malicious 7 days, clean 1 day, unknown 6 hours) to save VirusTotal quota.
+- **Rate limits** apply per install ID and per IP.
 
 ## Detection engine (`app/src/main/java/uz/sergak/core`)
 
@@ -37,7 +98,7 @@ Requirements: JDK 17 and the Android SDK (API 35).
 # APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Every push to `main` builds the APK in GitHub Actions and publishes it to the **`latest`** release, so you can download it straight to a phone.
+Every push to `main` builds both APKs and the server image in GitHub Actions, and publishes the APKs to the **`latest`** release so you can download them straight to a phone.
 
 ## Sources used for the threat model
 
