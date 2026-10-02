@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sergak</string>
+    <string name="share_check">Sergak\'da tekshirish</string>
+    <string name="guard_service_label">Sergak: firibgarlikdan himoya</string>
+</resources>
