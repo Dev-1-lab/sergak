@@ -3,4 +3,5 @@
     <string name="app_name">Sergak</string>
     <string name="share_check">Sergak\'da tekshirish</string>
     <string name="guard_service_label">Sergak: firibgarlikdan himoya</string>
+    <string name="share_check_apk">Sergak: APK faylni tekshirish</string>
 </resources>

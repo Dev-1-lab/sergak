@@ -49,6 +49,34 @@ class Prefs(context: Context) {
         get() = sp.getInt("quiz_best", -1)
         set(v) = sp.edit().putInt("quiz_best", v).apply()
 
+    /** Foydalanuvchi bulutli tekshiruvga rozilik berganmi (fayl xeshlari va tekshirilgan havolalar serverga yuboriladi). */
+    var cloudEnabled: Boolean
+        get() = sp.getBoolean("cloud_enabled", false)
+        set(v) = sp.edit().putBoolean("cloud_enabled", v).apply()
+
+    /** Kelgan xabarlardagi havolalarni ham avtomatik bulutda tekshirish (alohida rozilik). */
+    var cloudAutoLinks: Boolean
+        get() = sp.getBoolean("cloud_auto_links", false)
+        set(v) = sp.edit().putBoolean("cloud_auto_links", v).apply()
+
+    var cloudAsked: Boolean
+        get() = sp.getBoolean("cloud_asked", false)
+        set(v) = sp.edit().putBoolean("cloud_asked", v).apply()
+
+    /** Tasodifiy o'rnatma ID — faqat server so'rovlar chegarasi uchun. Shaxsga bog'lanmaydi. */
+    val installId: String
+        get() = sp.getString("install_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            sp.edit().putString("install_id", it).apply()
+        }
+
+    var feedEtag: String?
+        get() = sp.getString("feed_etag", null)
+        set(v) = sp.edit().putString("feed_etag", v).apply()
+
+    var feedSyncedAt: Long
+        get() = sp.getLong("feed_synced", 0L)
+        set(v) = sp.edit().putLong("feed_synced", v).apply()
+
     companion object {
         private const val KEY_DONE = "done_items"
         private const val KEY_TRUSTED = "trusted_apps"

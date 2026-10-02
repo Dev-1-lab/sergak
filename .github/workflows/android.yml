@@ -1,4 +1,4 @@
-name: Android build
+name: Build
 
 on:
   push:
@@ -8,9 +8,10 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,10 +24,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests
-        run: set -o pipefail; ./gradlew --no-daemon testDebugUnitTest 2>&1 | tee test.log
+        run: set -o pipefail; ./gradlew --no-daemon testOnlineDebugUnitTest 2>&1 | tee test.log
 
-      - name: Build debug APK
-        run: set -o pipefail; ./gradlew --no-daemon assembleDebug 2>&1 | tee build.log
+      # Server manzili va ilova tokeni: repo Settings → Secrets and variables → Actions
+      #   Variables: SERGAK_API_URL   (masalan https://api.sergak.uz)
+      #   Secrets:   SERGAK_APP_TOKEN (serverdagi SERGAK_APP_TOKEN bilan bir xil)
+      - name: Build APKs (online + offline)
+        env:
+          SERGAK_API_URL: ${{ vars.SERGAK_API_URL }}
+          SERGAK_APP_TOKEN: ${{ secrets.SERGAK_APP_TOKEN }}
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon assembleOnlineDebug assembleOfflineDebug \
+            -PsergakApiUrl="${SERGAK_API_URL}" -PsergakAppToken="${SERGAK_APP_TOKEN}" 2>&1 | tee build.log
 
       - name: Report compiler errors as annotations
         if: failure()
@@ -34,25 +44,63 @@ jobs:
           cat test.log build.log 2>/dev/null \
             | grep -E "^e: |error:|FAILED|Unresolved|AAPT|What went wrong" -A2 \
             | head -60 | while IFS= read -r line; do echo "::error::${line}"; done
-          for f in app/build/test-results/testDebugUnitTest/*.xml; do
+          for f in app/build/test-results/*/*.xml; do
             [ -f "$f" ] && grep -o 'message="[^"]*"' "$f" | head -20 | while IFS= read -r m; do echo "::error::TEST ${m}"; done
           done
           exit 1
 
-      - name: Upload APK artifact
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sergak-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: sergak-apks
+          path: app/build/outputs/apk/*/debug/*.apk
 
       - name: Publish "latest" release (direct phone download)
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk sergak-debug.apk
+          cp app/build/outputs/apk/online/debug/app-online-debug.apk sergak-online-debug.apk
+          cp app/build/outputs/apk/offline/debug/app-offline-debug.apk sergak-offline-debug.apk
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest sergak-debug.apk \
+          gh release create latest sergak-online-debug.apk sergak-offline-debug.apk \
             --title "Sergak — so'nggi test versiyasi" \
-            --notes "Avtomatik yig'ilgan debug APK (commit ${GITHUB_SHA::7}). Telefoningizga yuklab, o'rnating." \
+            --notes "Avtomatik yig'ilgan debug APK'lar (commit ${GITHUB_SHA::7}).
+          - **sergak-online-debug.apk** — VirusTotal / abuse.ch / Google bulutli tekshiruvi bilan (server manzili: ${{ vars.SERGAK_API_URL || 'hali sozlanmagan' }})
+          - **sergak-offline-debug.apk** — internet ruxsatisiz versiya" \
             --prerelease
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Test and package
+        run: set -o pipefail; mvn -B -ntp verify 2>&1 | tee mvn.log
+
+      - name: Report errors as annotations
+        if: failure()
+        run: |
+          grep -E "\[ERROR\]|FAILURE|Tests run:.*Fail" mvn.log | head -50 | while IFS= read -r line; do echo "::error::${line}"; done
+          for f in target/surefire-reports/*.txt; do
+            [ -f "$f" ] && grep -E "FAIL|expected|Exception" "$f" | head -10 | while IFS= read -r m; do echo "::error::$(basename $f): ${m}"; done
+          done
+          exit 1
+
+      - name: Build and push Docker image (ghcr.io)
+        if: github.event_name != 'pull_request'
+        run: |
+          IMAGE=ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')/sergak-api
+          echo "${{ github.token }}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker build -t "$IMAGE:latest" -t "$IMAGE:${GITHUB_SHA::7}" .
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_SHA::7}"

@@ -1,0 +1,53 @@
+server:
+  port: ${PORT:8080}
+  forward-headers-strategy: ${FORWARD_HEADERS:native}
+  error:
+    include-message: never
+
+spring:
+  application:
+    name: sergak-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/sergak}
+    username: ${DB_USER:sergak}
+    password: ${DB_PASSWORD:sergak}
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+
+# --- Sergak: barcha kalitlar muhit o'zgaruvchilaridan. Bo'sh kalit = provayder o'chiq. ---
+sergak:
+  app-token: ${SERGAK_APP_TOKEN:}
+  admin-token: ${SERGAK_ADMIN_TOKEN:}
+  strip-url-query: ${SERGAK_STRIP_URL_QUERY:true}
+  max-hashes-per-request: 50
+  rate-limit:
+    requests: ${SERGAK_RATE_REQUESTS:60}
+    window-seconds: ${SERGAK_RATE_WINDOW:600}
+  cache:
+    malicious-hours: 168
+    suspicious-hours: 24
+    clean-hours: 24
+    unknown-hours: 6
+  virustotal:
+    api-key: ${VT_API_KEY:}
+    requests-per-minute: ${VT_RPM:4}
+    requests-per-day: ${VT_RPD:500}
+  abusech:
+    auth-key: ${ABUSECH_AUTH_KEY:}
+  google:
+    api-key: ${GOOGLE_API_KEY:}
+    mode: ${GOOGLE_MODE:web-risk}

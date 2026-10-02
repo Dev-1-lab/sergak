@@ -2,12 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!--
-      Sergak ataylab INTERNET ruxsatisiz ishlaydi: hech qanday ma'lumot telefondan tashqariga chiqmaydi.
-      Kutubxonalar tasodifan qo'shib qo'ymasligi uchun ruxsat majburan olib tashlanadi.
-    -->
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <!-- INTERNET ruxsati faqat "online" variantida (src/online/AndroidManifest.xml). "offline" variantda u majburan olib tashlanadi. -->
 
     <!-- O'rnatilgan ilovalarni xavfsizlikka tekshirish uchun (antivirus/xavfsizlik ilovalari uchun ruxsat etilgan) -->
     <uses-permission
@@ -42,6 +37,18 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Telegram'da APK faylni "Ulashish" yoki "...bilan ochish" -> Sergak o'rnatishdan OLDIN tekshiradi -->
+            <intent-filter android:label="@string/share_check_apk">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+            <intent-filter android:label="@string/share_check_apk">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.android.package-archive" />
             </intent-filter>
             <!-- Matnni belgilab, menyudan "Sergak'da tekshirish" -->
             <intent-filter android:label="@string/share_check">

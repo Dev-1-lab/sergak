@@ -10,9 +10,14 @@ import android.provider.Telephony
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import uz.sergak.core.AppRiskScorer
+import uz.sergak.core.Finding
+import uz.sergak.core.LinkAnalyzer
 import uz.sergak.core.MessageAnalyzer
 import uz.sergak.core.RiskLevel
+import uz.sergak.core.ThreatIntel
+import uz.sergak.core.Verdict
 import uz.sergak.data.AppScanner
+import uz.sergak.data.IntelRepository
 import uz.sergak.data.Prefs
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
@@ -104,9 +109,32 @@ class GuardListenerService : NotificationListenerService() {
         }
 
         if (!prefs.alertScam) return
-        when (report.verdict.level) {
-            RiskLevel.DANGEROUS -> Notifier.messageAlert(this, appName, text, report)
-            RiskLevel.SUSPICIOUS -> if (report.verdict.score >= 35) Notifier.messageAlert(this, appName, text, report)
+        var finalReport = report
+        // Ixtiyoriy: foydalanuvchi alohida rozilik bergan bo'lsa, xabardagi havolalar bulutda ham tekshiriladi.
+        if (report.verdict.level != RiskLevel.DANGEROUS && report.urls.isNotEmpty()) {
+            val intel = IntelRepository(this)
+            val extra = ArrayList<Finding>()
+            for (u in report.urls.take(3)) {
+                val host = LinkAnalyzer.parse(u)?.host ?: continue
+                if (LinkAnalyzer.isOfficial(host)) continue
+                if (intel.isBlockedDomain(host)) {
+                    extra += Finding(
+                        "feed_domain", "Havola: ma'lum fishing sayt",
+                        "$host Sergak ro'yxatida firibgarlik sayti sifatida qayd etilgan.", "Ochmang.", 90,
+                    )
+                    continue
+                }
+                if (intel.cloudReady && prefs.cloudAutoLinks) {
+                    intel.lookupUrl(u)?.let { rep -> ThreatIntel.urlFinding(rep)?.let(extra::add) }
+                }
+            }
+            if (extra.isNotEmpty()) {
+                finalReport = report.copy(verdict = Verdict.of(report.verdict.findings + extra))
+            }
+        }
+        when (finalReport.verdict.level) {
+            RiskLevel.DANGEROUS -> Notifier.messageAlert(this, appName, text, finalReport)
+            RiskLevel.SUSPICIOUS -> if (finalReport.verdict.score >= 35) Notifier.messageAlert(this, appName, text, finalReport)
             RiskLevel.SAFE -> Unit
         }
     }
@@ -201,9 +229,17 @@ class GuardListenerService : NotificationListenerService() {
         fun checkNewPackage(context: Context, pkg: String) {
             val prefs = Prefs(context)
             if (!prefs.alertInstall || pkg in prefs.trustedApps) return
-            val risk = AppScanner(context).scanOne(pkg) ?: return
-            val sideloaded = risk.facts.installer == null || risk.facts.installer !in AppRiskScorer.TRUSTED_INSTALLERS
-            if (risk.verdict.level != RiskLevel.SAFE && sideloaded) {
+            val scanner = AppScanner(context)
+            var risk = scanner.scanOne(pkg) ?: return
+            val sideloaded = AppRiskScorer.isSideloaded(risk.facts)
+            if (!sideloaded) return
+            // Bulut (VirusTotal, MalwareBazaar): faqat SHA-256 xesh yuboriladi
+            val hash = risk.sha256
+            val intel = IntelRepository(context)
+            if (hash != null && intel.cloudReady) {
+                intel.lookupHashes(listOf(hash))[hash]?.let { rep -> risk = scanner.withIntel(risk, rep) }
+            }
+            if (risk.verdict.level != RiskLevel.SAFE) {
                 Notifier.appAlert(context, risk)
             }
         }

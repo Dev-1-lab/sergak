@@ -12,9 +12,30 @@ android {
         applicationId = "uz.sergak"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    // offline — internetsiz versiya (INTERNET ruxsati yo'q, davlat/air-gapped muhit uchun).
+    // online  — Sergak serveri orqali VirusTotal, abuse.ch, Google Web Risk tekshiruvi (foydalanuvchi roziligi bilan).
+    // Server manzili:  ./gradlew assembleOnlineRelease -PsergakApiUrl=https://api.example.uz -PsergakAppToken=...
+    flavorDimensions += "network"
+    productFlavors {
+        create("online") {
+            dimension = "network"
+            buildConfigField("boolean", "CLOUD", "true")
+            buildConfigField("String", "API_URL", "\"${project.findProperty("sergakApiUrl") ?: ""}\"")
+            buildConfigField("String", "APP_TOKEN", "\"${project.findProperty("sergakAppToken") ?: ""}\"")
+        }
+        create("offline") {
+            dimension = "network"
+            applicationIdSuffix = ".offline"
+            versionNameSuffix = "-offline"
+            buildConfigField("boolean", "CLOUD", "false")
+            buildConfigField("String", "API_URL", "\"\"")
+            buildConfigField("String", "APP_TOKEN", "\"\"")
+        }
     }
 
     buildTypes {
@@ -33,7 +54,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }

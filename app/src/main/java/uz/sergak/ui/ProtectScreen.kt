@@ -43,6 +43,7 @@ import uz.sergak.data.ChecklistGroup
 import uz.sergak.data.ChecklistItem
 import uz.sergak.data.Intents
 import uz.sergak.data.Prefs
+import uz.sergak.data.cloud.CloudClient
 import uz.sergak.guard.GuardStatus
 import uz.sergak.ui.theme.Good
 
@@ -78,7 +79,10 @@ fun ProtectScreen(resumeTick: Int) {
                         Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Maxfiylik: Sergak'da internet ruxsati yo'q. Xabarlar faqat telefon ichida tekshiriladi, hech qayerga yuborilmaydi va saqlanmaydi.",
+                            if (CloudClient.isAvailable)
+                                "Maxfiylik: xabarlar faqat telefon ichida tekshiriladi, hech qayerga yuborilmaydi va saqlanmaydi. Bulutli tekshiruv yoqilsa — faqat APK xeshlari va havolalar Sergak serveriga yuboriladi."
+                            else
+                                "Maxfiylik: Sergak'ning bu versiyasida internet ruxsati yo'q. Xabarlar faqat telefon ichida tekshiriladi, hech qayerga yuborilmaydi va saqlanmaydi.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -91,6 +95,33 @@ fun ProtectScreen(resumeTick: Int) {
                     } else {
                         Spacer(Modifier.height(10.dp))
                         Button(onClick = { Intents.notificationListenerSettings(context) }) { Text("Himoyani yoqish") }
+                    }
+                }
+            }
+
+            if (CloudClient.isAvailable) {
+                Spacer(Modifier.height(12.dp))
+                Card(shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Bulutli tekshiruv", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "VirusTotal (70+ antivirus), MalwareBazaar, URLhaus va Google Web Risk bazalari. API kalitlari ilovada emas, Sergak serverida saqlanadi.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        ToggleRow("APK fayllar va ilovalarni tekshirish (faqat SHA-256 xesh yuboriladi)", prefs.cloudEnabled) {
+                            prefs.cloudEnabled = it; prefs.cloudAsked = true; tick++
+                        }
+                        ToggleRow("Kelgan xabarlardagi havolalarni ham avtomatik tekshirish (havola manzili yuboriladi)", prefs.cloudAutoLinks) {
+                            prefs.cloudAutoLinks = it; tick++
+                        }
+                        val synced = prefs.feedSyncedAt
+                        Text(
+                            if (synced > 0) "Tahdidlar ro'yxati yangilangan: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(synced))
+                            else "Tahdidlar ro'yxati hali yuklanmagan (internetga ulanganda avtomatik yuklanadi)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

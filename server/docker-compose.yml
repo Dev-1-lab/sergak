@@ -1,0 +1,32 @@
+# Ishga tushirish:  cp .env.example .env  (kalitlarni yozing)  &&  docker compose up -d
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sergak
+      POSTGRES_USER: sergak
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sergak}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sergak"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/sergak
+      DB_USER: sergak
+      DB_PASSWORD: ${DB_PASSWORD:-sergak}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

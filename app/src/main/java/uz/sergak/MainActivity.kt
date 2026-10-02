@@ -1,6 +1,8 @@
 package uz.sergak
 
 import android.content.Intent
+import android.net.Uri
+import androidx.core.content.IntentCompat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,6 +48,8 @@ class MainActivity : ComponentActivity() {
     /** Tashqaridan (ulashish, bildirishnoma) kelgan tekshiriladigan matn. */
     private var incomingText by mutableStateOf<String?>(null)
     private var incomingRoute by mutableStateOf<String?>(null)
+    /** Telegram va boshqalardan "ulashilgan" yoki "bilan ochilgan" APK fayl. */
+    private var incomingApk by mutableStateOf<Uri?>(null)
 
     /** Foydalanuvchi sozlamalardan qaytganda ekranlar holatni qayta tekshirishi uchun. */
     private var resumeTick by mutableIntStateOf(0)
@@ -60,9 +64,11 @@ class MainActivity : ComponentActivity() {
                     resumeTick = resumeTick,
                     incomingText = incomingText,
                     incomingRoute = incomingRoute,
+                    incomingApk = incomingApk,
                     onIncomingConsumed = {
                         incomingText = null
                         incomingRoute = null
+                        incomingApk = null
                     },
                 )
             }
@@ -82,6 +88,17 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         intent ?: return
+        val apk: Uri? = when {
+            intent.action == Intent.ACTION_VIEW && intent.data != null -> intent.data
+            intent.action == Intent.ACTION_SEND && intent.type?.contains("android.package-archive") == true ->
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            else -> null
+        }
+        if (apk != null) {
+            incomingApk = apk
+            incomingRoute = Routes.CHECK
+            return
+        }
         val text = when (intent.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
                 ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
@@ -136,19 +153,22 @@ private fun SergakRoot(
     resumeTick: Int,
     incomingText: String?,
     incomingRoute: String?,
+    incomingApk: Uri?,
     onIncomingConsumed: () -> Unit,
 ) {
     val nav = rememberNavController()
     var pendingCheck by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    var pendingApk by androidx.compose.runtime.remember { mutableStateOf<Uri?>(null) }
 
-    LaunchedEffect(incomingText, incomingRoute) {
+    LaunchedEffect(incomingText, incomingRoute, incomingApk) {
         if (incomingText != null) pendingCheck = incomingText
+        if (incomingApk != null) pendingApk = incomingApk
         when {
             incomingRoute == null -> Unit
             incomingRoute.startsWith("learn/") -> nav.navigate(Routes.lesson(incomingRoute.removePrefix("learn/")))
             else -> nav.goTab(incomingRoute)
         }
-        if (incomingText != null || incomingRoute != null) onIncomingConsumed()
+        if (incomingText != null || incomingRoute != null || incomingApk != null) onIncomingConsumed()
     }
 
     val backStack by nav.currentBackStackEntryAsState()
@@ -171,7 +191,11 @@ private fun SergakRoot(
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
             composable(Routes.HOME) { HomeScreen(nav, resumeTick) }
             composable(Routes.CHECK) {
-                CheckScreen(initialText = pendingCheck, onConsumed = { pendingCheck = null })
+                CheckScreen(
+                    initialText = pendingCheck,
+                    initialApk = pendingApk,
+                    onConsumed = { pendingCheck = null; pendingApk = null },
+                )
             }
             composable(Routes.SCAN) { ScanScreen(resumeTick) }
             composable(Routes.PROTECT) { ProtectScreen(resumeTick) }

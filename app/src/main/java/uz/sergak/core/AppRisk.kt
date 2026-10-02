@@ -21,6 +21,10 @@ data class AppFacts(
 data class AppRisk(
     val facts: AppFacts,
     val verdict: Verdict,
+    /** O'rnatilgan APK faylning SHA-256 xeshi (faqat do'kondan tashqari o'rnatilganlar uchun hisoblanadi). */
+    val sha256: String? = null,
+    /** Kiritilgan qo'shimcha topilmalar (statik tahlil, IOC, bulut) — qayta baholashda kerak. */
+    val extra: List<Finding> = emptyList(),
 )
 
 /**
@@ -69,8 +73,11 @@ object AppRiskScorer {
         "com.google.android.apps.nbu.files" to "Files (Google)",
     )
 
-    fun score(a: AppFacts): AppRisk {
+    fun isSideloaded(a: AppFacts): Boolean = a.installer == null || a.installer !in TRUSTED_INSTALLERS
+
+    fun score(a: AppFacts, extra: List<Finding> = emptyList(), sha256: String? = null): AppRisk {
         val f = mutableListOf<Finding>()
+        f += extra
         val sideloaded = a.installer == null || a.installer !in TRUSTED_INSTALLERS
         val smsPerms = a.grantedPermissions.intersect(SMS_PERMS)
 
@@ -88,6 +95,7 @@ object AppRiskScorer {
                 if (a.installedVia in MESSENGER_NAMES) 35 else 20,
             )
         }
+        FakeAppDetector.check(a.label, a.packageName, sideloaded)?.let { f += it }
         if (smsPerms.isNotEmpty() && !a.isDefaultSmsApp) {
             f += Finding(
                 "sms_access", "SMS xabarlaringizni o'qiy oladi",
@@ -157,6 +165,6 @@ object AppRiskScorer {
             )
         }
 
-        return AppRisk(a, Verdict.of(f))
+        return AppRisk(a, Verdict.of(f), sha256, extra)
     }
 }

@@ -7,12 +7,15 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Process
 import android.provider.Settings
 import android.provider.Telephony
+import uz.sergak.core.ApkInspector
 import uz.sergak.core.AppFacts
 import uz.sergak.core.AppRisk
 import uz.sergak.core.AppRiskScorer
+import uz.sergak.core.Finding
+import uz.sergak.core.Reputation
+import uz.sergak.core.ThreatIntel
 import java.util.concurrent.TimeUnit
 
 /**
@@ -79,14 +82,19 @@ class AppScanner(private val context: Context) {
     private fun isUserApp(ai: ApplicationInfo): Boolean =
         (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
 
-    /** Barcha foydalanuvchi ilovalarini skanerlaydi, xavflilari birinchi. */
+    /**
+     * Barcha foydalanuvchi ilovalarini skanerlaydi, xavflilari birinchi.
+     * Do'kondan tashqari o'rnatilgan ilovalar uchun qo'shimcha: APK xeshi (ma'lum viruslar ro'yxati bilan
+     * solishtiriladi) va ichki tuzilma tahlili (yashirin ikkinchi ilova, shifrlangan payload, dropper belgilari).
+     */
     fun scanAll(): List<AppRisk> {
         val snap = snapshot()
+        val feed = IntelRepository(context).feedHashes()
         return installedPackages()
             .asSequence()
             .filter { it.packageName != context.packageName }
             .filter { it.applicationInfo?.let(::isUserApp) == true }
-            .map { AppRiskScorer.score(facts(it, snap)) }
+            .map { deepScore(it, facts(it, snap), feed) }
             .sortedByDescending { it.verdict.score }
             .toList()
     }
@@ -97,7 +105,28 @@ class AppScanner(private val context: Context) {
         val info = packageInfo(pkg) ?: return null
         val ai = info.applicationInfo ?: return null
         if (!isUserApp(ai)) return null
-        return AppRiskScorer.score(facts(info, snapshot()))
+        return deepScore(info, facts(info, snapshot()), IntelRepository(context).feedHashes())
+    }
+
+    private fun deepScore(info: PackageInfo, f: AppFacts, feed: Map<String, String>): AppRisk {
+        if (!AppRiskScorer.isSideloaded(f)) return AppRiskScorer.score(f)
+        val path = info.applicationInfo?.sourceDir ?: return AppRiskScorer.score(f)
+        val file = java.io.File(path)
+        val hashes = runCatching { ApkInspector.hash(file) }.getOrNull()
+        val extra = ArrayList<Finding>()
+        if (hashes != null) {
+            ThreatIntel.localMatch(hashes.sha256, hashes.sha1, feed)?.let { rep -> ThreatIntel.fileFinding(rep)?.let(extra::add) }
+        }
+        val report = ApkInspector.inspect(file)
+        extra += ApkInspector.findings(report, sideloaded = true, canInstall = f.canInstallApps)
+        return AppRiskScorer.score(f, extra, hashes?.sha256)
+    }
+
+    /** Bulutdan kelgan xulosani qo'shib, ilovani qayta baholaydi. */
+    fun withIntel(risk: AppRisk, rep: Reputation): AppRisk {
+        val finding = ThreatIntel.fileFinding(rep) ?: return risk
+        val extra = risk.extra.filterNot { it.id.startsWith("intel_") } + finding
+        return AppRiskScorer.score(risk.facts, extra, risk.sha256)
     }
 
     private fun facts(info: PackageInfo, snap: Snapshot): AppFacts {
@@ -169,8 +198,6 @@ class AppScanner(private val context: Context) {
         val uid = info.applicationInfo?.uid ?: return null
         return canRequestInstalls(pkg, uid)
     }
-
-    fun ownUid(): Int = Process.myUid()
 
     companion object {
         private const val OP_REQUEST_INSTALL = "android:request_install_packages"
