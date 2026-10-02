@@ -82,7 +82,7 @@ How the server keeps lookups private and within quota:
 
 ## Detection engine (`app/src/main/java/uz/sergak/core`)
 
-Pure Kotlin with no Android dependencies, fully unit-tested (`./gradlew testDebugUnitTest`).
+Pure Kotlin with no Android dependencies, fully unit-tested (`./gradlew testOnlineDebugUnitTest`).
 
 - `Normalizer`: Cyrillic (Uzbek and Russian) → Latin, apostrophe unification, leetspeak.
 - `LinkAnalyzer`: official-domain allowlist, brand impersonation (`my-gov-uz.online`, `uzcard-kompensatsiya.online`), look-alikes by edit distance (`paymee`, `c1ick`), punycode / IDN, `user@host` tricks, IP hosts, shorteners, risky TLDs, `.apk` downloads, fake Telegram bots.
@@ -94,8 +94,8 @@ Pure Kotlin with no Android dependencies, fully unit-tested (`./gradlew testDebu
 Requirements: JDK 17 and the Android SDK (API 35).
 
 ```bash
-./gradlew testDebugUnitTest assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew testOnlineDebugUnitTest assembleOnlineDebug assembleOfflineDebug
+# APKs: app/build/outputs/apk/{online,offline}/debug/
 ```
 
 Every push to `main` builds both APKs and the server image in GitHub Actions, and publishes the APKs to the **`latest`** release so you can download them straight to a phone.
